@@ -8,6 +8,7 @@ use axum::{
     BoxError, Router,
 };
 use clap::Parser;
+use hyper::HeaderMap;
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -19,6 +20,7 @@ use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     LatencyUnit, ServiceBuilderExt,
 };
+use tracing::{warn, Span};
 
 /// Simple key/value store with an HTTP API
 #[derive(Debug, Parser)]
@@ -83,7 +85,14 @@ fn app() -> Router {
                     tracing::trace!(size_bytes = chunk.len(), latency = ?latency, "sending body chunk")
                 })
                 .make_span_with(DefaultMakeSpan::new().include_headers(true))
-                .on_response(DefaultOnResponse::new().include_headers(true).latency_unit(LatencyUnit::Micros)),
+                .on_response(DefaultOnResponse::new().include_headers(true).latency_unit(LatencyUnit::Micros))
+                .on_eos(
+                    |_trailers: Option<&HeaderMap>,
+                     stream_duration: Duration,
+                     _span: &Span| {
+                        warn!("stream closed after {:?}", stream_duration); 
+                    }
+                )
         )
         .sensitive_response_headers(sensitive_headers)
         // Handle errors
